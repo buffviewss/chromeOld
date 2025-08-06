@@ -35,8 +35,8 @@ done
 echo "📥 Đang lấy danh sách file từ Google Drive..."
 python3 <<EOF > file_list.txt
 from googleapiclient.discovery import build
-import os
 from google.auth.credentials import AnonymousCredentials
+
 service = build('drive', 'v3', credentials=AnonymousCredentials())
 results = service.files().list(q=f"'{DRIVE_ID}' in parents and trashed=false", fields="files(id, name)").execute()
 for f in results.get('files', []):
@@ -48,15 +48,15 @@ if [[ ! -s file_list.txt ]]; then
     exit 1
 fi
 
-# Hiển thị danh sách
+# Hiển thị danh sách file và chọn
 echo "🔍 Danh sách file khả dụng:"
 nl -s". " <(cut -d'|' -f2 file_list.txt)
-
 read -p "👉 Nhập số thứ tự file muốn tải: " choice
 FILE_ID=$(sed -n "${choice}p" file_list.txt | cut -d'|' -f1)
 FILE_NAME=$(sed -n "${choice}p" file_list.txt | cut -d'|' -f2)
 
-echo "📥 Đang tải file: $FILE_NAME..."
+# Tải đúng file chọn
+echo "📥 Đang tải file: $FILE_NAME ..."
 gdown "https://drive.google.com/uc?id=$FILE_ID"
 
 # === Gỡ bản mặc định ===
@@ -122,4 +122,4 @@ else
     echo "ℹ️ Trên Lubuntu (LXQt), hãy nhấp phải biểu tượng trong menu -> 'Pin to Panel'."
 fi
 
-echo "✅ Hoàn tất! $BTYPE đã cài, khóa update, tạo shortcut, pin taskbar."
+echo "✅ Hoàn tất! $BTYPE đã được cài, khóa update, tạo shortcut và pin taskbar."
