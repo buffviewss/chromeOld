@@ -14,65 +14,87 @@ else
     fi
 fi
 
-
-
-# === Cấu hình: gán Folder ID cho Chrome và Firefox ===
+# === Cấu hình: Folder ID Google Drive ===
 CHROME_DRIVE_ID="1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
 FIREFOX_DRIVE_ID="1CeMNJTLgfsaFkcroOh1xpxFC-uz9HrLb"
 
+# === Tạo thư mục tải tạm ===
 DOWNLOAD_DIR="$HOME/browser_temp"
 mkdir -p "$DOWNLOAD_DIR" && cd "$DOWNLOAD_DIR"
 
-# Cài gdown nếu chưa có
-if ! command -v gdown &>/dev/null; then
-    sudo apt update
-    sudo apt install -y python3-pip
-    pip3 install gdown
-fi
-
-# Lựa chọn trình duyệt
+# === Lựa chọn trình duyệt ===
 echo "Chọn trình duyệt bạn muốn cài:"
 select browser in "Chrome" "Firefox" "Thoát"; do
     case $browser in
         Chrome) DRIVE_ID="$CHROME_DRIVE_ID"; BTYPE="chrome"; break;;
         Firefox) DRIVE_ID="$FIREFOX_DRIVE_ID"; BTYPE="firefox"; break;;
-        Thoát) exit 0;;
-        *) echo "Lựa chọn không hợp lệ!";;
+        Thoát) echo "🚪 Thoát."; exit 0;;
+        *) echo "❌ Lựa chọn không hợp lệ!";;
     esac
 done
 
-# Tải file từ Google Drive
+# === Tải file từ Google Drive ===
+echo "📥 Đang tải danh sách file $BTYPE từ Google Drive..."
 gdown --folder "https://drive.google.com/drive/folders/$DRIVE_ID" --no-cookies
 
-# Liệt kê file .deb (chrome) hoặc .tar.*
-echo "Các file khả dụng:"
-ls *.deb 2>/dev/null || ls *.tar.* 2>/dev/null
+# === Liệt kê file và chọn ===
+if [[ $BTYPE == "chrome" ]]; then
+    FILE_LIST=$(ls *.deb 2>/dev/null)
+else
+    FILE_LIST=$(ls *.tar.* 2>/dev/null)
+fi
 
-read -p "Nhập tên file cần cài: " FILE_SELECT
-[[ -f "$FILE_SELECT" ]] || { echo "File không tồn tại"; exit 1; }
+if [[ -z "$FILE_LIST" ]]; then
+    echo "❌ Không tìm thấy file hợp lệ!"
+    exit 1
+fi
 
-# Gỡ bản mặc định
+echo "🔍 Các file khả dụng:"
+echo "$FILE_LIST"
+
+FILE_COUNT=$(echo "$FILE_LIST" | wc -l)
+if [[ $FILE_COUNT -eq 1 ]]; then
+    FILE_SELECT=$(echo "$FILE_LIST")
+    echo "✅ Tự động chọn file: $FILE_SELECT"
+else
+    read -p "👉 Nhập tên file cần cài: " FILE_SELECT
+    [[ -f "$FILE_SELECT" ]] || { echo "❌ File không tồn tại!"; exit 1; }
+fi
+
+# === Gỡ bản mặc định ===
+echo "🗑️ Đang gỡ bản mặc định..."
 if [[ $BTYPE == "chrome" ]]; then
     sudo apt remove -y google-chrome-stable || true
 elif [[ $BTYPE == "firefox" ]]; then
     sudo snap remove firefox || sudo apt remove -y firefox || true
 fi
 
-# Cài và khóa cập nhật
+# === Cài đặt và khóa cập nhật ===
 if [[ $BTYPE == "chrome" ]]; then
+    echo "🚀 Đang cài Chrome..."
     sudo dpkg -i "$FILE_SELECT"
     sudo apt -f install -y
     sudo apt-mark hold google-chrome-stable
     sudo sed -i 's/^deb/# deb/' /etc/apt/sources.list.d/google-chrome.list 2>/dev/null
 elif [[ $BTYPE == "firefox" ]]; then
+    echo "🚀 Đang cài Firefox..."
     tar -xf "$FILE_SELECT"
+    sudo rm -rf /opt/firefox_custom
     sudo mv firefox "/opt/firefox_custom"
     sudo ln -sf /opt/firefox_custom/firefox /usr/local/bin/firefoxcustom
-    # Tắt auto update trong config Firefox
-    echo 'user_pref("app.update.auto", false); user_pref("app.update.enabled", false);' | sudo tee -a /opt/firefox_custom/browser/defaults/pref/lock-update.js >/dev/null
+    # Tạo file policies.json để khóa update
+    sudo mkdir -p /opt/firefox_custom/distribution
+    cat <<EOF | sudo tee /opt/firefox_custom/distribution/policies.json >/dev/null
+{
+  "policies": {
+    "AppAutoUpdate": false
+  }
+}
+EOF
 fi
 
-# Tạo shortcut
+# === Tạo shortcut ===
+echo "🎨 Đang tạo shortcut..."
 if [[ $BTYPE == "chrome" ]]; then
     cat <<EOF > ~/.local/share/applications/browser_custom.desktop
 [Desktop Entry]
@@ -95,10 +117,12 @@ StartupNotify=true
 EOF
 fi
 
-# Pin vào dock/taskbar
-gio set ~/.local/share/applications/browser_custom.desktop metadata::trusted true 2>/dev/null
+# === Pin vào taskbar (Ubuntu GNOME) ===
 if command -v gsettings &>/dev/null; then
+    gio set ~/.local/share/applications/browser_custom.desktop metadata::trusted true 2>/dev/null
     gsettings set org.gnome.shell favorite-apps "$(gsettings get org.gnome.shell favorite-apps | sed "s/]$/, 'browser_custom.desktop']/")"
+else
+    echo "ℹ️ Trên Lubuntu (LXQt), hãy nhấp chuột phải icon trong menu -> Pin to Panel."
 fi
 
-echo "✅ Xong! Bạn có thể tìm ứng dụng trong menu và launch nó."
+echo "✅ Hoàn tất! $BTYPE đã được cài, khóa cập nhật, tạo shortcut và pin taskbar."
