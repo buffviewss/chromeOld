@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# ==========================
+# Script cài Chrome từ Google Drive folder ID (được cung cấp trực tiếp)
+# ==========================
+
+# Nhập ID folder Google Drive
+DRIVE_ID="$1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
+
+if [[ -z "$DRIVE_ID" ]]; then
+    echo "❌ Bạn chưa cung cấp ID của folder Google Drive!"
+    echo "Ví dụ: ./install_chrome_from_drive.sh YOUR_FOLDER_ID"
+    exit 1
+fi
+
+# Thư mục tạm chứa file tải về
+DOWNLOAD_DIR="$HOME/chrome_temp"
+mkdir -p "$DOWNLOAD_DIR"
+cd "$DOWNLOAD_DIR" || exit
+
+# Liệt kê file từ folder
+echo "📂 Đang lấy danh sách file từ Google Drive..."
+gdown --folder "https://drive.google.com/drive/folders/$DRIVE_ID" --no-cookies
+
+echo "🔍 Các file Chrome tải về:"
+ls google-chrome-stable_*.deb
+
+# Chọn file để cài
+read -p "👉 Nhập đúng tên file .deb cần cài: " CHROME_FILE
+
+if [[ ! -f "$CHROME_FILE" ]]; then
+    echo "❌ Không tìm thấy file: $CHROME_FILE"
+    exit 1
+fi
+
+# Gỡ Chrome cũ nếu có
+echo "🗑️ Gỡ bản Chrome cũ (nếu có)..."
+sudo apt remove -y google-chrome-stable
+
+# Cài file đã chọn
+echo "🚀 Cài đặt Chrome: $CHROME_FILE"
+sudo dpkg -i "$CHROME_FILE"
+sudo apt -f install -y
+
+# Khóa cập nhật
+echo "🔒 Khóa phiên bản Chrome..."
+sudo apt-mark hold google-chrome-stable
+
+# Vô hiệu hóa repo Google
+REPO_FILE="/etc/apt/sources.list.d/google-chrome.list"
+if [[ -f "$REPO_FILE" ]]; then
+    sudo sed -i 's/^deb/# deb/' "$REPO_FILE"
+fi
+
+# Tạo shortcut trong menu
+cat <<EOF > ~/.local/share/applications/google-chrome.desktop
+[Desktop Entry]
+Version=1.0
+Name=Google Chrome (Custom)
+Exec=/usr/bin/google-chrome-stable %U
+Terminal=false
+Icon=google-chrome
+Type=Application
+Categories=Network;WebBrowser;
+StartupNotify=true
+EOF
+
+# Pin vào taskbar (GNOME hoặc Lubuntu panel)
+gio set ~/.local/share/applications/google-chrome.desktop metadata::trusted true
+if command -v gsettings &> /dev/null; then
+    gsettings set org.gnome.shell favorite-apps "$(gsettings get org.gnome.shell favorite-apps | sed "s/]$/, 'google-chrome.desktop']/")"
+fi
+
+echo "✅ Hoàn tất! Chrome đã được tải từ Drive, cài đặt, khóa update và pin vào taskbar."
