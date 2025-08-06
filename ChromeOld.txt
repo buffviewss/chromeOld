@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# Kích hoạt venv và cài gdown nếu chưa có
+if [[ ! -d "$HOME/gdown-venv" ]]; then
+    python3 -m venv ~/gdown-venv
+    source ~/gdown-venv/bin/activate
+    pip install gdown
+else
+    source ~/gdown-venv/bin/activate
+fi
+
+
 # === Cấu hình: gán Folder ID cho Chrome và Firefox ===
 CHROME_DRIVE_ID="1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
 FIREFOX_DRIVE_ID="1CeMNJTLgfsaFkcroOh1xpxFC-uz9HrLb"
