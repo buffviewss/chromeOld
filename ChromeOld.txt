@@ -2,16 +2,14 @@
 
 # === Tự cài Python venv và gdown ===
 if [[ ! -d "$HOME/gdown-venv" ]]; then
-    echo "📦 Đang tạo venv Python và cài gdown + API Google..."
+    echo "📦 Đang tạo venv Python và cài gdown..."
     python3 -m venv ~/gdown-venv
-    source ~/gdown-venv/bin/activate
-    pip install --no-cache-dir gdown google-api-python-client google-auth-httplib2 google-auth-oauthlib
-else
-    source ~/gdown-venv/bin/activate
-    if ! command -v gdown &>/dev/null; then
-        pip install --no-cache-dir gdown google-api-python-client google-auth-httplib2 google-auth-oauthlib
-    fi
 fi
+
+source ~/gdown-venv/bin/activate
+
+# Cài gdown trong venv (đảm bảo luôn có)
+pip install --no-cache-dir gdown
 
 # === Cấu hình Google Drive Folder ID ===
 CHROME_DRIVE_ID="1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
@@ -31,33 +29,39 @@ select browser in "Chrome" "Firefox" "Thoát"; do
     esac
 done
 
-# === Lấy danh sách file từ Google Drive ===
-echo "📥 Đang lấy danh sách file từ Google Drive..."
-python3 <<EOF > file_list.txt
-from googleapiclient.discovery import build
-from google.auth.credentials import AnonymousCredentials
+# === Tải toàn bộ folder từ Google Drive ===
+echo "📥 Đang tải toàn bộ folder $BTYPE từ Google Drive..."
+gdown --folder "https://drive.google.com/drive/folders/$DRIVE_ID" --no-cookies
 
-service = build('drive', 'v3', credentials=AnonymousCredentials())
-results = service.files().list(q=f"'{DRIVE_ID}' in parents and trashed=false", fields="files(id, name)").execute()
-for f in results.get('files', []):
-    print(f"{f['id']}|{f['name']}")
-EOF
+# === Liệt kê file tải về ===
+echo "🔍 Danh sách file tải về:"
+if [[ $BTYPE == "chrome" ]]; then
+    FILE_LIST=$(find "$DOWNLOAD_DIR" -type f -name "*.deb")
+else
+    FILE_LIST=$(find "$DOWNLOAD_DIR" -type f -name "*.tar.*")
+fi
 
-if [[ ! -s file_list.txt ]]; then
-    echo "❌ Không tìm thấy file hợp lệ trong folder!"
+if [[ -z "$FILE_LIST" ]]; then
+    echo "❌ Không tìm thấy file hợp lệ!"
     exit 1
 fi
 
-# Hiển thị danh sách file và chọn
-echo "🔍 Danh sách file khả dụng:"
-nl -s". " <(cut -d'|' -f2 file_list.txt)
-read -p "👉 Nhập số thứ tự file muốn tải: " choice
-FILE_ID=$(sed -n "${choice}p" file_list.txt | cut -d'|' -f1)
-FILE_NAME=$(sed -n "${choice}p" file_list.txt | cut -d'|' -f2)
+# Hiển thị danh sách để chọn
+echo "$FILE_LIST" | nl -s". "
+read -p "👉 Nhập số thứ tự file muốn cài: " choice
 
-# Tải đúng file chọn
-echo "📥 Đang tải file: $FILE_NAME ..."
-gdown "https://drive.google.com/uc?id=$FILE_ID"
+FILE_SELECT=$(echo "$FILE_LIST" | sed -n "${choice}p")
+
+if [[ ! -f "$FILE_SELECT" ]]; then
+    echo "❌ File không tồn tại!"
+    exit 1
+fi
+
+echo "✅ Chọn file: $FILE_SELECT"
+
+# === Xóa file không được chọn để tiết kiệm dung lượng ===
+echo "🧹 Dọn dẹp file không dùng..."
+find "$DOWNLOAD_DIR" -type f ! -name "$(basename "$FILE_SELECT")" -delete
 
 # === Gỡ bản mặc định ===
 echo "🗑️ Gỡ bản mặc định..."
@@ -70,13 +74,13 @@ fi
 # === Cài đặt và khóa cập nhật ===
 if [[ $BTYPE == "chrome" ]]; then
     echo "🚀 Đang cài Chrome..."
-    sudo dpkg -i "$FILE_NAME"
+    sudo dpkg -i "$FILE_SELECT"
     sudo apt -f install -y
     sudo apt-mark hold google-chrome-stable
     sudo sed -i 's/^deb/# deb/' /etc/apt/sources.list.d/google-chrome.list 2>/dev/null
 elif [[ $BTYPE == "firefox" ]]; then
     echo "🚀 Đang cài Firefox..."
-    tar -xf "$FILE_NAME"
+    tar -xf "$FILE_SELECT"
     sudo rm -rf /opt/firefox_custom
     sudo mv firefox /opt/firefox_custom
     sudo ln -sf /opt/firefox_custom/firefox /usr/local/bin/firefoxcustom
