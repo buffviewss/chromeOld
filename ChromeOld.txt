@@ -78,20 +78,44 @@ if [[ $BTYPE == "chrome" ]]; then
     sudo apt -f install -y
     sudo apt-mark hold google-chrome-stable
     sudo sed -i 's/^deb/# deb/' /etc/apt/sources.list.d/google-chrome.list 2>/dev/null
+
+    # 🔒 Tắt update nội bộ của Chrome
+    echo "🚫 Tắt update nội bộ Chrome..."
+    sudo rm -rf /opt/google/chrome/cron/
+    sudo mkdir -p /etc/opt/chrome/policies/managed
+    cat <<EOF > /tmp/disable_update.json
+{
+  "AutoUpdateCheckPeriodMinutes": 0,
+  "DisableAutoUpdateChecksCheckbox": true,
+  "MetricsReportingEnabled": false
+}
+EOF
+    sudo mv /tmp/disable_update.json /etc/opt/chrome/policies/managed/disable_update.json
+    sudo chmod -R 000 /opt/google/chrome/cron || true
+
 elif [[ $BTYPE == "firefox" ]]; then
     echo "🚀 Đang cài Firefox..."
     tar -xf "$FILE_SELECT"
     sudo rm -rf /opt/firefox_custom
     sudo mv firefox /opt/firefox_custom
     sudo ln -sf /opt/firefox_custom/firefox /usr/local/bin/firefoxcustom
+
+    # 🔒 Tắt update nội bộ Firefox bằng policy và cấu hình
+    echo "🚫 Tắt update nội bộ Firefox..."
     sudo mkdir -p /opt/firefox_custom/distribution
     cat <<EOF2 | sudo tee /opt/firefox_custom/distribution/policies.json >/dev/null
 {
   "policies": {
-    "AppAutoUpdate": false
+    "AppAutoUpdate": false,
+    "DisableAppUpdate": true,
+    "ManualAppUpdateOnly": true
   }
 }
 EOF2
+
+    # Tạo file cấu hình cứng chặn update
+    sudo mkdir -p /opt/firefox_custom/browser/defaults/preferences
+    echo 'pref("app.update.enabled", false);' | sudo tee /opt/firefox_custom/browser/defaults/preferences/disable_update.js >/dev/null
 fi
 
 # === Tạo shortcut ===
@@ -126,4 +150,4 @@ else
     echo "ℹ️ Trên Lubuntu (LXQt), hãy nhấp phải biểu tượng trong menu -> 'Pin to Panel'."
 fi
 
-echo "✅ Hoàn tất! $BTYPE đã được cài, khóa update, tạo shortcut và pin taskbar."
+echo "✅ Hoàn tất! $BTYPE đã được cài, khóa update và tắt update nội bộ."
