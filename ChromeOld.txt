@@ -1,68 +1,66 @@
 #!/bin/bash
 
-# === Tự cài Python venv và gdown nếu chưa có ===
+# === Tự cài Python venv và gdown ===
 if [[ ! -d "$HOME/gdown-venv" ]]; then
-    echo "📦 Đang tạo môi trường Python venv và cài gdown..."
+    echo "📦 Đang tạo venv Python và cài gdown + API Google..."
     python3 -m venv ~/gdown-venv
     source ~/gdown-venv/bin/activate
-    pip install --no-cache-dir gdown
+    pip install --no-cache-dir gdown google-api-python-client google-auth-httplib2 google-auth-oauthlib
 else
     source ~/gdown-venv/bin/activate
     if ! command -v gdown &>/dev/null; then
-        echo "📥 Cài lại gdown trong venv..."
-        pip install --no-cache-dir gdown
+        pip install --no-cache-dir gdown google-api-python-client google-auth-httplib2 google-auth-oauthlib
     fi
 fi
 
-# === Cấu hình: Folder ID Google Drive ===
+# === Cấu hình Google Drive Folder ID ===
 CHROME_DRIVE_ID="1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
 FIREFOX_DRIVE_ID="1CeMNJTLgfsaFkcroOh1xpxFC-uz9HrLb"
 
-# === Tạo thư mục tải tạm ===
 DOWNLOAD_DIR="$HOME/browser_temp"
 mkdir -p "$DOWNLOAD_DIR" && cd "$DOWNLOAD_DIR"
 
-# === Lựa chọn trình duyệt ===
-echo "Chọn trình duyệt bạn muốn cài:"
+# === Chọn trình duyệt ===
+echo "Chọn trình duyệt muốn cài:"
 select browser in "Chrome" "Firefox" "Thoát"; do
     case $browser in
         Chrome) DRIVE_ID="$CHROME_DRIVE_ID"; BTYPE="chrome"; break;;
         Firefox) DRIVE_ID="$FIREFOX_DRIVE_ID"; BTYPE="firefox"; break;;
-        Thoát) echo "🚪 Thoát."; exit 0;;
+        Thoát) echo "🚪 Thoát script."; exit 0;;
         *) echo "❌ Lựa chọn không hợp lệ!";;
     esac
 done
 
-# === Tải file từ Google Drive ===
-echo "📥 Đang tải danh sách file $BTYPE từ Google Drive..."
-gdown --folder "https://drive.google.com/drive/folders/$DRIVE_ID" --no-cookies
+# === Lấy danh sách file từ Google Drive ===
+echo "📥 Đang lấy danh sách file từ Google Drive..."
+python3 <<EOF > file_list.txt
+from googleapiclient.discovery import build
+import os
+from google.auth.credentials import AnonymousCredentials
+service = build('drive', 'v3', credentials=AnonymousCredentials())
+results = service.files().list(q=f"'{DRIVE_ID}' in parents and trashed=false", fields="files(id, name)").execute()
+for f in results.get('files', []):
+    print(f"{f['id']}|{f['name']}")
+EOF
 
-# === Liệt kê file và chọn ===
-if [[ $BTYPE == "chrome" ]]; then
-    FILE_LIST=$(ls *.deb 2>/dev/null)
-else
-    FILE_LIST=$(ls *.tar.* 2>/dev/null)
-fi
-
-if [[ -z "$FILE_LIST" ]]; then
-    echo "❌ Không tìm thấy file hợp lệ!"
+if [[ ! -s file_list.txt ]]; then
+    echo "❌ Không tìm thấy file hợp lệ trong folder!"
     exit 1
 fi
 
-echo "🔍 Các file khả dụng:"
-echo "$FILE_LIST"
+# Hiển thị danh sách
+echo "🔍 Danh sách file khả dụng:"
+nl -s". " <(cut -d'|' -f2 file_list.txt)
 
-FILE_COUNT=$(echo "$FILE_LIST" | wc -l)
-if [[ $FILE_COUNT -eq 1 ]]; then
-    FILE_SELECT=$(echo "$FILE_LIST")
-    echo "✅ Tự động chọn file: $FILE_SELECT"
-else
-    read -p "👉 Nhập tên file cần cài: " FILE_SELECT
-    [[ -f "$FILE_SELECT" ]] || { echo "❌ File không tồn tại!"; exit 1; }
-fi
+read -p "👉 Nhập số thứ tự file muốn tải: " choice
+FILE_ID=$(sed -n "${choice}p" file_list.txt | cut -d'|' -f1)
+FILE_NAME=$(sed -n "${choice}p" file_list.txt | cut -d'|' -f2)
+
+echo "📥 Đang tải file: $FILE_NAME..."
+gdown "https://drive.google.com/uc?id=$FILE_ID"
 
 # === Gỡ bản mặc định ===
-echo "🗑️ Đang gỡ bản mặc định..."
+echo "🗑️ Gỡ bản mặc định..."
 if [[ $BTYPE == "chrome" ]]; then
     sudo apt remove -y google-chrome-stable || true
 elif [[ $BTYPE == "firefox" ]]; then
@@ -72,31 +70,30 @@ fi
 # === Cài đặt và khóa cập nhật ===
 if [[ $BTYPE == "chrome" ]]; then
     echo "🚀 Đang cài Chrome..."
-    sudo dpkg -i "$FILE_SELECT"
+    sudo dpkg -i "$FILE_NAME"
     sudo apt -f install -y
     sudo apt-mark hold google-chrome-stable
     sudo sed -i 's/^deb/# deb/' /etc/apt/sources.list.d/google-chrome.list 2>/dev/null
 elif [[ $BTYPE == "firefox" ]]; then
     echo "🚀 Đang cài Firefox..."
-    tar -xf "$FILE_SELECT"
+    tar -xf "$FILE_NAME"
     sudo rm -rf /opt/firefox_custom
-    sudo mv firefox "/opt/firefox_custom"
+    sudo mv firefox /opt/firefox_custom
     sudo ln -sf /opt/firefox_custom/firefox /usr/local/bin/firefoxcustom
-    # Tạo file policies.json để khóa update
     sudo mkdir -p /opt/firefox_custom/distribution
-    cat <<EOF | sudo tee /opt/firefox_custom/distribution/policies.json >/dev/null
+    cat <<EOF2 | sudo tee /opt/firefox_custom/distribution/policies.json >/dev/null
 {
   "policies": {
     "AppAutoUpdate": false
   }
 }
-EOF
+EOF2
 fi
 
 # === Tạo shortcut ===
-echo "🎨 Đang tạo shortcut..."
+echo "🎨 Tạo shortcut..."
 if [[ $BTYPE == "chrome" ]]; then
-    cat <<EOF > ~/.local/share/applications/browser_custom.desktop
+    cat <<EOF3 > ~/.local/share/applications/browser_custom.desktop
 [Desktop Entry]
 Name=Google Chrome (Custom)
 Exec=/usr/bin/google-chrome-stable %U
@@ -104,9 +101,9 @@ Icon=google-chrome
 Type=Application
 Categories=Network;WebBrowser;
 StartupNotify=true
-EOF
-elif [[ $BTYPE == "firefox" ]]; then
-    cat <<EOF > ~/.local/share/applications/browser_custom.desktop
+EOF3
+else
+    cat <<EOF3 > ~/.local/share/applications/browser_custom.desktop
 [Desktop Entry]
 Name=Firefox (Custom)
 Exec=/usr/local/bin/firefoxcustom %U
@@ -114,15 +111,15 @@ Icon=/opt/firefox_custom/browser/chrome/icons/default/default128.png
 Type=Application
 Categories=Network;WebBrowser;
 StartupNotify=true
-EOF
+EOF3
 fi
 
-# === Pin vào taskbar (Ubuntu GNOME) ===
+# === Pin vào taskbar ===
 if command -v gsettings &>/dev/null; then
     gio set ~/.local/share/applications/browser_custom.desktop metadata::trusted true 2>/dev/null
     gsettings set org.gnome.shell favorite-apps "$(gsettings get org.gnome.shell favorite-apps | sed "s/]$/, 'browser_custom.desktop']/")"
 else
-    echo "ℹ️ Trên Lubuntu (LXQt), hãy nhấp chuột phải icon trong menu -> Pin to Panel."
+    echo "ℹ️ Trên Lubuntu (LXQt), hãy nhấp phải biểu tượng trong menu -> 'Pin to Panel'."
 fi
 
-echo "✅ Hoàn tất! $BTYPE đã được cài, khóa cập nhật, tạo shortcut và pin taskbar."
+echo "✅ Hoàn tất! $BTYPE đã cài, khóa update, tạo shortcut, pin taskbar."
