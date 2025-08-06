@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# Kích hoạt venv và cài gdown nếu chưa có
+# === Tự cài Python venv và gdown nếu chưa có ===
 if [[ ! -d "$HOME/gdown-venv" ]]; then
+    echo "📦 Đang tạo môi trường Python venv và cài gdown..."
     python3 -m venv ~/gdown-venv
     source ~/gdown-venv/bin/activate
-    pip install gdown
+    pip install --no-cache-dir gdown
 else
     source ~/gdown-venv/bin/activate
+    if ! command -v gdown &>/dev/null; then
+        echo "📥 Cài lại gdown trong venv..."
+        pip install --no-cache-dir gdown
+    fi
 fi
+
 
 
 # === Cấu hình: gán Folder ID cho Chrome và Firefox ===
