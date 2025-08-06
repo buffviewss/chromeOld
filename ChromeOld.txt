@@ -1,74 +1,88 @@
 #!/bin/bash
 
-# ==========================
-# Script cài Chrome từ Google Drive folder ID (được cung cấp trực tiếp)
-# ==========================
+# === Cấu hình: gán Folder ID cho Chrome và Firefox ===
+CHROME_DRIVE_ID="1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
+FIREFOX_DRIVE_ID="1CeMNJTLgfsaFkcroOh1xpxFC-uz9HrLb"
 
-# Nhập ID folder Google Drive
-DRIVE_ID="$1tD0XPj-t5C7p9ByV3RLg-qcHaYYSXAj1"
+DOWNLOAD_DIR="$HOME/browser_temp"
+mkdir -p "$DOWNLOAD_DIR" && cd "$DOWNLOAD_DIR"
 
-if [[ -z "$DRIVE_ID" ]]; then
-    echo "❌ Bạn chưa cung cấp ID của folder Google Drive!"
-    echo "Ví dụ: ./install_chrome_from_drive.sh YOUR_FOLDER_ID"
-    exit 1
+# Cài gdown nếu chưa có
+if ! command -v gdown &>/dev/null; then
+    sudo apt update
+    sudo apt install -y python3-pip
+    pip3 install gdown
 fi
 
-# Thư mục tạm chứa file tải về
-DOWNLOAD_DIR="$HOME/chrome_temp"
-mkdir -p "$DOWNLOAD_DIR"
-cd "$DOWNLOAD_DIR" || exit
+# Lựa chọn trình duyệt
+echo "Chọn trình duyệt bạn muốn cài:"
+select browser in "Chrome" "Firefox" "Thoát"; do
+    case $browser in
+        Chrome) DRIVE_ID="$CHROME_DRIVE_ID"; BTYPE="chrome"; break;;
+        Firefox) DRIVE_ID="$FIREFOX_DRIVE_ID"; BTYPE="firefox"; break;;
+        Thoát) exit 0;;
+        *) echo "Lựa chọn không hợp lệ!";;
+    esac
+done
 
-# Liệt kê file từ folder
-echo "📂 Đang lấy danh sách file từ Google Drive..."
+# Tải file từ Google Drive
 gdown --folder "https://drive.google.com/drive/folders/$DRIVE_ID" --no-cookies
 
-echo "🔍 Các file Chrome tải về:"
-ls google-chrome-stable_*.deb
+# Liệt kê file .deb (chrome) hoặc .tar.*
+echo "Các file khả dụng:"
+ls *.deb 2>/dev/null || ls *.tar.* 2>/dev/null
 
-# Chọn file để cài
-read -p "👉 Nhập đúng tên file .deb cần cài: " CHROME_FILE
+read -p "Nhập tên file cần cài: " FILE_SELECT
+[[ -f "$FILE_SELECT" ]] || { echo "File không tồn tại"; exit 1; }
 
-if [[ ! -f "$CHROME_FILE" ]]; then
-    echo "❌ Không tìm thấy file: $CHROME_FILE"
-    exit 1
+# Gỡ bản mặc định
+if [[ $BTYPE == "chrome" ]]; then
+    sudo apt remove -y google-chrome-stable || true
+elif [[ $BTYPE == "firefox" ]]; then
+    sudo snap remove firefox || sudo apt remove -y firefox || true
 fi
 
-# Gỡ Chrome cũ nếu có
-echo "🗑️ Gỡ bản Chrome cũ (nếu có)..."
-sudo apt remove -y google-chrome-stable
-
-# Cài file đã chọn
-echo "🚀 Cài đặt Chrome: $CHROME_FILE"
-sudo dpkg -i "$CHROME_FILE"
-sudo apt -f install -y
-
-# Khóa cập nhật
-echo "🔒 Khóa phiên bản Chrome..."
-sudo apt-mark hold google-chrome-stable
-
-# Vô hiệu hóa repo Google
-REPO_FILE="/etc/apt/sources.list.d/google-chrome.list"
-if [[ -f "$REPO_FILE" ]]; then
-    sudo sed -i 's/^deb/# deb/' "$REPO_FILE"
+# Cài và khóa cập nhật
+if [[ $BTYPE == "chrome" ]]; then
+    sudo dpkg -i "$FILE_SELECT"
+    sudo apt -f install -y
+    sudo apt-mark hold google-chrome-stable
+    sudo sed -i 's/^deb/# deb/' /etc/apt/sources.list.d/google-chrome.list 2>/dev/null
+elif [[ $BTYPE == "firefox" ]]; then
+    tar -xf "$FILE_SELECT"
+    sudo mv firefox "/opt/firefox_custom"
+    sudo ln -sf /opt/firefox_custom/firefox /usr/local/bin/firefoxcustom
+    # Tắt auto update trong config Firefox
+    echo 'user_pref("app.update.auto", false); user_pref("app.update.enabled", false);' | sudo tee -a /opt/firefox_custom/browser/defaults/pref/lock-update.js >/dev/null
 fi
 
-# Tạo shortcut trong menu
-cat <<EOF > ~/.local/share/applications/google-chrome.desktop
+# Tạo shortcut
+if [[ $BTYPE == "chrome" ]]; then
+    cat <<EOF > ~/.local/share/applications/browser_custom.desktop
 [Desktop Entry]
-Version=1.0
 Name=Google Chrome (Custom)
 Exec=/usr/bin/google-chrome-stable %U
-Terminal=false
 Icon=google-chrome
 Type=Application
 Categories=Network;WebBrowser;
 StartupNotify=true
 EOF
-
-# Pin vào taskbar (GNOME hoặc Lubuntu panel)
-gio set ~/.local/share/applications/google-chrome.desktop metadata::trusted true
-if command -v gsettings &> /dev/null; then
-    gsettings set org.gnome.shell favorite-apps "$(gsettings get org.gnome.shell favorite-apps | sed "s/]$/, 'google-chrome.desktop']/")"
+elif [[ $BTYPE == "firefox" ]]; then
+    cat <<EOF > ~/.local/share/applications/browser_custom.desktop
+[Desktop Entry]
+Name=Firefox (Custom)
+Exec=/usr/local/bin/firefoxcustom %U
+Icon=/opt/firefox_custom/browser/chrome/icons/default/default128.png
+Type=Application
+Categories=Network;WebBrowser;
+StartupNotify=true
+EOF
 fi
 
-echo "✅ Hoàn tất! Chrome đã được tải từ Drive, cài đặt, khóa update và pin vào taskbar."
+# Pin vào dock/taskbar
+gio set ~/.local/share/applications/browser_custom.desktop metadata::trusted true 2>/dev/null
+if command -v gsettings &>/dev/null; then
+    gsettings set org.gnome.shell favorite-apps "$(gsettings get org.gnome.shell favorite-apps | sed "s/]$/, 'browser_custom.desktop']/")"
+fi
+
+echo "✅ Xong! Bạn có thể tìm ứng dụng trong menu và launch nó."
